@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"github.com/CeoFred/gin-boilerplate/constants"
@@ -27,9 +28,64 @@ import (
 	apitoolkit "github.com/apitoolkit/apitoolkit-go"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	swaggerfiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
+
+// Define metrics
+var (
+	httpRequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "http_requests_total",
+			Help: "Total number of HTTP requests",
+		},
+		[]string{"method", "endpoint", "status"},
+	)
+
+	httpRequestDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "http_request_duration_seconds",
+			Help:    "HTTP request duration in seconds",
+			Buckets: []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
+		},
+		[]string{"method", "endpoint"},
+	)
+
+	activeConnections = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "http_active_connections",
+			Help: "Number of active HTTP connections",
+		},
+	)
+)
+
+
+func prometheusMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+
+		// Increment active connections
+		activeConnections.Inc()
+
+		// Process request
+		c.Next()
+
+		// Decrement active connections
+		activeConnections.Dec()
+
+		duration := time.Since(start).Seconds()
+
+		// Skip metrics endpoint itself
+		if c.Request.URL.Path != "/metrics" {
+			status := strconv.Itoa(c.Writer.Status())
+			httpRequestsTotal.WithLabelValues(c.Request.Method, c.Request.URL.Path, status).Inc()
+			httpRequestDuration.WithLabelValues(c.Request.Method, c.Request.URL.Path).Observe(duration)
+		}
+	}
+}
 
 // @title Gin Boilerplare
 // @version 1.0
@@ -79,6 +135,8 @@ func main() {
 	}))
 
 	g.Use(gin.Logger())
+	g.Use(prometheusMiddleware())
+	g.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	g.Use(gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
 
