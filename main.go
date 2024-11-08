@@ -62,7 +62,6 @@ var (
 	)
 )
 
-
 func prometheusMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
@@ -190,6 +189,10 @@ func main() {
 	v1 := g.Group("/api/v1")
 
 	keepRunning := true
+	sqlDB, err := database.DB.DB()
+	if err != nil {
+		log.Fatal("Error getting underlying SQL DB:", err)
+	}
 
 	provider, err := streaming.NewProducer(&streaming.Config{
 		Verbose:   false,
@@ -264,4 +267,9 @@ func main() {
 	}
 	provider.Clear()
 	cancel()
+	if err := sqlDB.Close(); err != nil {
+		log.Fatal("Error closing database connection:", err)
+	}
+	log.Println("Database connection closed")
+
 }

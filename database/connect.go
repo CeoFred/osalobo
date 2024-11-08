@@ -115,7 +115,16 @@ func Connect(config *Config) {
     }
 
     fmt.Println("Connection Opened to Database")
+    
+	sqlDB, err := DB.DB()
+	if err != nil {
+		panic(err)
+	}
 
+	// Configure connection pool settings
+	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetMaxOpenConns(100)
+	sqlDB.SetConnMaxLifetime(time.Hour)
     // Start a goroutine to continuously monitor connection stats
     go monitorDBStats()
 }
